@@ -1,4 +1,5 @@
 const express = require('express');
+const ExcelJS = require('exceljs');
 const db = require('../db');
 const { authRequired, requireRole } = require('../middleware/auth');
 const { recordAudit } = require('../utils/audit');
@@ -69,12 +70,12 @@ async function insertSchedule(events) {
   }
 }
 
-router.get('/animals', asyncHandler(async (req, res) => {
-  const farmId = scopeFarm(req, req.query.farm_id);
+async function getAnimalsWithEvents(req, requestedFarmId) {
+  const farmId = scopeFarm(req, requestedFarmId);
   const params = [];
   let where = "ba.status = 'active'";
   if (farmId) { where += ' AND ba.farm_id = ?'; params.push(farmId); }
-  if (req.user.role === 'staff' && !farmId) return res.status(400).json({ error: 'Tài khoản chưa được gán trại' });
+  if (req.user.role === 'staff' && !farmId) throw Object.assign(new Error('Tài khoản chưa được gán trại'), { status: 400 });
   const animals = await db.prepare(
     `SELECT ba.*, f.name AS farm_name
      FROM breeding_animals ba JOIN farms f ON f.id = ba.farm_id
@@ -83,7 +84,53 @@ router.get('/animals', asyncHandler(async (req, res) => {
   const events = animals.length
     ? await db.prepare('SELECT ve.*, u.full_name AS administered_by_name FROM vaccination_events ve LEFT JOIN users u ON u.id = ve.administered_by WHERE ve.animal_id = ANY(?) ORDER BY ve.scheduled_date, ve.id').all(animals.map((animal) => animal.id))
     : [];
-  res.json(animals.map((animal) => ({ ...animal, vaccination_events: events.filter((event) => event.animal_id === animal.id) })));
+  return animals.map((animal) => ({ ...animal, vaccination_events: events.filter((event) => event.animal_id === animal.id) }));
+}
+
+router.get('/animals', asyncHandler(async (req, res) => {
+  res.json(await getAnimalsWithEvents(req, req.query.farm_id));
+}));
+
+router.get('/export', asyncHandler(async (req, res) => {
+  const animals = await getAnimalsWithEvents(req, req.query.farm_id);
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Theo doi tiem chung');
+  const vaccineColumns = [...HEIFER_SCHEDULE.map(([name]) => `HB: ${name}`), ...PREGNANT_SCHEDULE.map(([name]) => `NC: ${name}`)];
+  worksheet.columns = [
+    { header: 'STT', key: 'index', width: 7 },
+    { header: 'Tên trại', key: 'farm_name', width: 20 },
+    { header: 'Mã số nái', key: 'ma_so_nai', width: 15 },
+    { header: 'Dòng nái', key: 'dong_nai', width: 16 },
+    { header: 'Kg', key: 'weight_kg', width: 9 },
+    { header: 'Ngày nhập', key: 'arrival_date', width: 14 },
+    { header: 'Ngày phối', key: 'breeding_date', width: 14 },
+    ...vaccineColumns.map((name, index) => ({ header: name, key: `v${index}`, width: 24 })),
+  ];
+  animals.forEach((animal, index) => {
+    const row = {
+      index: index + 1,
+      farm_name: animal.farm_name,
+      ma_so_nai: animal.ma_so_nai,
+      dong_nai: animal.dong_nai || '',
+      weight_kg: Number(animal.weight_kg),
+      arrival_date: animal.arrival_date,
+      breeding_date: animal.breeding_date || '',
+    };
+    vaccineColumns.forEach((column, eventIndex) => {
+      const phase = eventIndex < HEIFER_SCHEDULE.length ? 'heifer' : 'pregnant';
+      const vaccineName = column.slice(4);
+      const event = animal.vaccination_events.find((item) => item.phase === phase && item.vaccine_name === vaccineName);
+      row[`v${eventIndex}`] = event ? `${event.administered_at ? 'Đã tiêm' : 'Chưa tiêm'} - ${event.scheduled_date}${event.administered_at ? ` - ${event.administered_at}` : ''}` : 'Chưa tạo lịch';
+    });
+    worksheet.addRow(row);
+  });
+  worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8622C' } };
+  worksheet.views = [{ state: 'frozen', xSplit: 7, ySplit: 1 }];
+  const buffer = await workbook.xlsx.writeBuffer();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="theo-doi-tiem-chung-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+  res.send(buffer);
 }));
 
 router.post('/animals', requireRole('admin', 'staff'), transactional(async (req, res) => {

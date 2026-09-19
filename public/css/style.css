@@ -338,6 +338,17 @@ table th { background: #eef4ee; position: sticky; top: 0; }
 .vacc-administered { margin-top: 4px; }
 .vacc-row-rejected td { background: #fff5f5; }
 .vacc-row-pending td { background: #fffaf0; }
+.vaccination-table { min-width: 1380px; }
+.vaccination-table th { vertical-align: middle; text-align: center; }
+.vaccination-table td { vertical-align: middle; text-align: center; }
+.vacc-cell { min-width: 105px; }
+.vacc-cell.rejected { background: #fff1f1; }
+.vacc-cell.pending { background: #fff8e8; }
+.vacc-cell.approved { background: #f1faf2; }
+.vacc-empty { color: #9aa59a; background: #f7f9f7; }
+.vacc-check { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.vacc-check input { width: 16px; height: 16px; accent-color: var(--accent-green); cursor: pointer; }
+.vacc-check input:disabled { cursor: default; }
 @media (max-width: 850px) {
   .vacc-form-grid { grid-template-columns: 1fr 1fr; }
   .vaccination-header { align-items: flex-start; flex-direction: column; }

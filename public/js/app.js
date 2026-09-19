@@ -909,10 +909,11 @@ async function renderVaccinationDashboard(container) {
       </form>
     </div>
     <div class="card">
-      <div class="toolbar"><h3 style="margin:0">Lịch tiêm và cảnh báo</h3><span id="vaccLastRefresh" class="hint"></span></div>
+      <div class="toolbar"><h3 style="margin:0">Lịch tiêm và cảnh báo</h3><div><button class="btn-sm export-btn" id="btnExportVaccinations">Xuất Excel</button><span id="vaccLastRefresh" class="hint"></span></div></div>
       <div class="table-wrap"><table class="vaccination-table">
-        <thead><tr><th>Mã số nái</th><th>Dòng</th><th>Kg</th><th>Ngày nhập</th><th>Ngày phối</th><th>Giai đoạn</th><th>Mũi tiêm</th><th>Ngày dự kiến</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-        <tbody id="vaccinationTbody"><tr><td colspan="10">Đang tải...</td></tr></tbody>
+        <thead><tr><th rowspan="2">Mã số nái</th><th rowspan="2">Dòng</th><th rowspan="2">Kg</th><th rowspan="2">Ngày nhập</th><th rowspan="2">Ngày phối</th><th colspan="6">Heo hậu bị</th><th colspan="4">Nái chửa</th></tr>
+          <tr>${['Tẩy KST (+2)', 'Pavo (+7)', 'Dịch tả (+14)', 'PRRS (+21)', 'FMD (+28)', 'Aujeszky (+35)', 'Bravo (+42)', 'PRRS (+50)', 'Ecoli (+84)', 'Tẩy KST (+105)'].map((name) => `<th>${name}</th>`).join('')}</tr></thead>
+        <tbody id="vaccinationTbody"><tr><td colspan="15">Đang tải...</td></tr></tbody>
       </table></div>
     </div>`;
 
@@ -927,40 +928,64 @@ async function renderVaccinationDashboard(container) {
     container.querySelector('#vaccOverdueCount').textContent = overdue;
     container.querySelector('#vaccLastRefresh').textContent = `Cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
     const tbody = container.querySelector('#vaccinationTbody');
-    if (!events.length) {
-      tbody.innerHTML = '<tr><td colspan="10">Chưa có hồ sơ hoặc lịch tiêm.</td></tr>';
+    if (!animals.length) {
+      tbody.innerHTML = '<tr><td colspan="15">Chưa có hồ sơ hoặc lịch tiêm.</td></tr>';
       return;
     }
-    tbody.innerHTML = events.map((event) => {
-      const status = vaccinationStatus(event);
-      const phase = event.phase === 'heifer' ? 'Hậu bị' : 'Nái chửa';
-      return `<tr class="vacc-row-${status.className}">
-        <td>${safeText(event.animal.ma_so_nai)}</td><td>${safeText(event.animal.dong_nai)}</td><td>${safeText(event.animal.weight_kg)}</td>
-        <td>${safeText(vaccinationDateLabel(event.animal.arrival_date))}</td><td>${safeText(vaccinationDateLabel(event.animal.breeding_date))}</td>
-        <td>${phase}</td><td>${safeText(event.vaccine_name)} <small>(+${event.day_offset} ngày)</small></td>
-        <td>${safeText(vaccinationDateLabel(event.scheduled_date))}</td>
-        <td><span class="badge ${status.className}">${status.label}</span>${event.administered_at ? `<small class="vacc-administered">${safeText(formatTimestamp(event.administered_at))}</small>` : ''}</td>
-        <td>
-          ${event.administered_at ? `<span class="hint">${safeText(event.administered_by_name || '')}</span>` : `<button class="btn-sm primary" data-administer-vacc="${event.id}">Đã tiêm</button>`}
-          ${event.phase === 'heifer' && event.animal.breeding_date ? '' : event.phase === 'heifer' ? `<button class="btn-sm" data-breeding-animal="${event.animal.id}">Nhập ngày phối</button>` : ''}
-        </td>
-      </tr>`;
+    const vaccineOrder = [...HEIFER_VACCINES, ...PREGNANT_VACCINES];
+    tbody.innerHTML = animals.map((animal) => {
+      const animalEvents = animal.vaccination_events;
+      const cells = vaccineOrder.map((item) => {
+        const event = animalEvents.find((candidate) => candidate.phase === item.phase && candidate.vaccine_name === item.name);
+        if (!event) return '<td class="vacc-empty">-</td>';
+        const status = vaccinationStatus(event);
+        return `<td class="vacc-cell ${status.className}" title="${safeText(`${item.name} - dự kiến ${vaccinationDateLabel(event.scheduled_date)}`)}">
+          <label class="vacc-check"><input type="checkbox" data-administer-vacc="${event.id}" ${event.administered_at ? 'checked disabled' : ''}><span>${event.administered_at ? 'Đã tiêm' : status.label}</span></label>
+          <small>${safeText(vaccinationDateLabel(event.scheduled_date))}</small>
+        </td>`;
+      }).join('');
+      return `<tr><td>${safeText(animal.ma_so_nai)}</td><td>${safeText(animal.dong_nai)}</td><td>${safeText(animal.weight_kg)}</td><td>${safeText(vaccinationDateLabel(animal.arrival_date))}</td><td>${safeText(vaccinationDateLabel(animal.breeding_date))}</td>${cells}</tr>`;
     }).join('');
     tbody.querySelectorAll('[data-administer-vacc]').forEach((button) => button.addEventListener('click', async () => {
+      if (!button.checked) return;
       const note = prompt('Ghi chú mũi tiêm (có thể để trống):') || '';
-      await api(`/vaccinations/events/${button.dataset.administerVacc}/administer`, { method: 'POST', body: JSON.stringify({ note }) });
-      await loadVaccinations();
-    }));
-    tbody.querySelectorAll('[data-breeding-animal]').forEach((button) => button.addEventListener('click', async () => {
-      const date = prompt('Nhập ngày phối của nái chửa theo dạng yyyy-mm-dd:');
-      if (!date) return;
-      await api(`/vaccinations/animals/${button.dataset.breedingAnimal}`, { method: 'PATCH', body: JSON.stringify({ breeding_date: date }) });
-      await loadVaccinations();
+      try {
+        await api(`/vaccinations/events/${button.dataset.administerVacc}/administer`, { method: 'POST', body: JSON.stringify({ note }) });
+        await loadVaccinations();
+      } catch (error) {
+        button.checked = false;
+        alert(error.message);
+      }
     }));
   }
 
+  const HEIFER_VACCINES = [
+    { phase: 'heifer', name: 'Tẩy ký sinh trùng' }, { phase: 'heifer', name: 'Pavo (chống khô thai)' },
+    { phase: 'heifer', name: 'Dịch tả' }, { phase: 'heifer', name: 'PRRS (Tai Xanh)' },
+    { phase: 'heifer', name: 'FMD (Lở mồm long móng)' }, { phase: 'heifer', name: 'Aujeszky (Giả dại)' },
+  ];
+  const PREGNANT_VACCINES = [
+    { phase: 'pregnant', name: 'Bravo (Khô Thai)' }, { phase: 'pregnant', name: 'PRRS (Tai Xanh)' },
+    { phase: 'pregnant', name: 'Ecoli' }, { phase: 'pregnant', name: 'Tẩy KST' },
+  ];
+
   const vaccinationForm = container.querySelector('#vaccAnimalForm');
   if (!vaccinationForm) throw new Error('Không tìm thấy biểu mẫu nhập heo hậu bị');
+  container.querySelector('#btnExportVaccinations').addEventListener('click', async () => {
+    try {
+      const response = await fetch(`/api/vaccinations/export?farm_id=${farmId}`, { headers: { Authorization: `Bearer ${state.token}` } });
+      if (!response.ok) throw new Error('Không thể xuất lịch tiêm chủng');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `theo-doi-tiem-chung-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
   vaccinationForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = new FormData(vaccinationForm);
