@@ -91,6 +91,36 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TEXT NOT NULL DEFAULT now_utc_text()
 );
 
+CREATE TABLE IF NOT EXISTS breeding_animals (
+  id SERIAL PRIMARY KEY,
+  farm_id INTEGER NOT NULL REFERENCES farms(id) ON DELETE CASCADE,
+  ma_so_nai TEXT NOT NULL,
+  dong_nai TEXT,
+  weight_kg NUMERIC(6,2) NOT NULL CHECK (weight_kg >= 90 AND weight_kg <= 170),
+  source TEXT,
+  arrival_date TEXT NOT NULL,
+  breeding_date TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT now_utc_text(),
+  updated_at TEXT NOT NULL DEFAULT now_utc_text(),
+  UNIQUE (farm_id, ma_so_nai)
+);
+
+CREATE TABLE IF NOT EXISTS vaccination_events (
+  id SERIAL PRIMARY KEY,
+  animal_id INTEGER NOT NULL REFERENCES breeding_animals(id) ON DELETE CASCADE,
+  farm_id INTEGER NOT NULL REFERENCES farms(id) ON DELETE CASCADE,
+  phase TEXT NOT NULL CHECK (phase IN ('heifer', 'pregnant')),
+  vaccine_name TEXT NOT NULL,
+  day_offset INTEGER NOT NULL,
+  scheduled_date TEXT NOT NULL,
+  administered_at TEXT,
+  administered_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT now_utc_text()
+);
+
 -- An toàn cho lược đồ cũ hơn (thêm cột nếu còn thiếu khi nâng cấp).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;
@@ -105,3 +135,6 @@ CREATE INDEX IF NOT EXISTS idx_sow_care_logs_sow_id ON sow_care_logs(sow_id);
 CREATE INDEX IF NOT EXISTS idx_sow_care_logs_farm_id ON sow_care_logs(farm_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sow_deletions_deleted_at ON sow_deletions(deleted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_breeding_animals_farm_id ON breeding_animals(farm_id);
+CREATE INDEX IF NOT EXISTS idx_vaccination_events_animal_id ON vaccination_events(animal_id);
+CREATE INDEX IF NOT EXISTS idx_vaccination_events_scheduled_date ON vaccination_events(scheduled_date);

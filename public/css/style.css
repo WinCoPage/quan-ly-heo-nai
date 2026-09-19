@@ -325,6 +325,24 @@ table th { background: #eef4ee; position: sticky; top: 0; }
 .overdue-bar { flex: 1; height: 14px; border-radius: 8px; background: #e2e8e2; overflow: hidden; }
 .overdue-bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--danger)); }
 
+.vaccination-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+.vaccination-header h2 { margin: 0; color: var(--primary-dark); }
+.vaccination-stats { grid-template-columns: repeat(3, 1fr); }
+.danger-value { color: var(--danger); }
+.vacc-form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: end; }
+.vacc-form-grid label { font-size: 0.82rem; font-weight: 600; color: var(--primary-dark); }
+.vacc-form-grid input { display: block; width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 5px; }
+.vacc-form-grid button { min-height: 35px; }
+.vacc-form-grid .msg { grid-column: 1 / -1; margin: 0; }
+.vaccination-table small { display: block; color: #6b7a68; font-size: 0.72rem; }
+.vacc-administered { margin-top: 4px; }
+.vacc-row-rejected td { background: #fff5f5; }
+.vacc-row-pending td { background: #fffaf0; }
+@media (max-width: 850px) {
+  .vacc-form-grid { grid-template-columns: 1fr 1fr; }
+  .vaccination-header { align-items: flex-start; flex-direction: column; }
+}
+
 .care-panel {
   border: 2px solid var(--primary);
   background: #fffaf5;

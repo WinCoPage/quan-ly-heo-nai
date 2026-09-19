@@ -11,6 +11,7 @@ const sowRoutes = require('./routes/sows');
 const sowDeletionRoutes = require('./routes/sowDeletions');
 const careLogRoutes = require('./routes/careLogs');
 const auditLogRoutes = require('./routes/auditLogs');
+const vaccinationRoutes = require('./routes/vaccinations');
 
 const app = express();
 if (process.env.TRUST_PROXY_HOPS) {
@@ -54,6 +55,7 @@ app.use('/api/sows', sowRoutes);
 app.use('/api/sow-deletions', sowDeletionRoutes);
 app.use('/api/care-logs', careLogRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/vaccinations', vaccinationRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Không tìm thấy chức năng' }));
 
 app.use(express.static(path.join(__dirname, 'public')));
