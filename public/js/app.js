@@ -911,9 +911,9 @@ async function renderVaccinationDashboard(container) {
     <div class="card">
       <div class="toolbar"><h3 style="margin:0">Lịch tiêm và cảnh báo</h3><div><button class="btn-sm export-btn" id="btnExportVaccinations">Xuất Excel</button><span id="vaccLastRefresh" class="hint"></span></div></div>
       <div class="table-wrap"><table class="vaccination-table">
-        <thead><tr><th rowspan="2">Mã số nái</th><th rowspan="2">Dòng</th><th rowspan="2">Kg</th><th rowspan="2">Ngày nhập</th><th rowspan="2">Ngày phối</th><th colspan="6">Heo hậu bị</th><th colspan="4">Nái chửa</th></tr>
+        <thead><tr><th rowspan="2">Mã số nái</th><th rowspan="2">Dòng</th><th rowspan="2">Kg</th><th rowspan="2">Ngày nhập</th><th rowspan="2">Ngày phối</th><th rowspan="2">Kết quả đậu thai</th><th colspan="6">Heo hậu bị</th><th colspan="4">Nái chửa</th></tr>
           <tr>${['Tẩy KST (+2)', 'Pavo (+7)', 'Dịch tả (+14)', 'PRRS (+21)', 'FMD (+28)', 'Aujeszky (+35)', 'Bravo (+42)', 'PRRS (+50)', 'Ecoli (+84)', 'Tẩy KST (+105)'].map((name) => `<th>${name}</th>`).join('')}</tr></thead>
-        <tbody id="vaccinationTbody"><tr><td colspan="15">Đang tải...</td></tr></tbody>
+        <tbody id="vaccinationTbody"><tr><td colspan="16">Đang tải...</td></tr></tbody>
       </table></div>
     </div>`;
 
@@ -929,7 +929,7 @@ async function renderVaccinationDashboard(container) {
     container.querySelector('#vaccLastRefresh').textContent = `Cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
     const tbody = container.querySelector('#vaccinationTbody');
     if (!animals.length) {
-      tbody.innerHTML = '<tr><td colspan="15">Chưa có hồ sơ hoặc lịch tiêm.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="16">Chưa có hồ sơ hoặc lịch tiêm.</td></tr>';
       return;
     }
     const vaccineOrder = [...HEIFER_VACCINES, ...PREGNANT_VACCINES];
@@ -944,7 +944,7 @@ async function renderVaccinationDashboard(container) {
           <small>${safeText(vaccinationDateLabel(event.scheduled_date))}</small>
         </td>`;
       }).join('');
-      return `<tr><td>${safeText(animal.ma_so_nai)}</td><td>${safeText(animal.dong_nai)}</td><td>${safeText(animal.weight_kg)}</td><td>${safeText(vaccinationDateLabel(animal.arrival_date))}</td><td>${safeText(vaccinationDateLabel(animal.breeding_date))}</td>${cells}</tr>`;
+      return `<tr><td>${safeText(animal.ma_so_nai)}</td><td>${safeText(animal.dong_nai)}</td><td>${safeText(animal.weight_kg)}</td><td>${safeText(vaccinationDateLabel(animal.arrival_date))}</td><td>${safeText(vaccinationDateLabel(animal.sow_breeding_date || animal.breeding_date))}</td><td><span class="badge ${animal.pregnancy_result === 'Đậu thai' ? 'approved' : 'pending'}">${safeText(animal.pregnancy_result || 'Chưa xác nhận')}</span></td>${cells}</tr>`;
     }).join('');
     tbody.querySelectorAll('[data-administer-vacc]').forEach((button) => button.addEventListener('click', async () => {
       if (!button.checked) return;

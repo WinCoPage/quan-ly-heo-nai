@@ -5,6 +5,7 @@ const { authRequired, requireRole } = require('../middleware/auth');
 const { recordAudit } = require('../utils/audit');
 const { validateSow, positiveId } = require('../utils/validation');
 const asyncHandler = require('../utils/asyncHandler');
+const vaccinationRoutes = require('./vaccinations');
 
 const router = express.Router();
 router.use(authRequired);
@@ -149,7 +150,9 @@ router.post('/', requireRole('admin', 'staff'), transactional(async (req, res) =
   const info = await db
     .prepare(`INSERT INTO sows (${cols.join(', ')}) VALUES (${placeholders}) RETURNING id`)
     .run(...values);
-  await recordAudit(db, req.user, 'sow', info.lastInsertRowid, 'create', null, await db.prepare('SELECT * FROM sows WHERE id = ?').get(info.lastInsertRowid));
+  const createdSow = await db.prepare('SELECT * FROM sows WHERE id = ?').get(info.lastInsertRowid);
+  await vaccinationRoutes.syncPregnancyFromSow(await db.prepare('SELECT * FROM breeding_animals WHERE id = ?').get(heifer.id));
+  await recordAudit(db, req.user, 'sow', info.lastInsertRowid, 'create', null, createdSow);
   res.status(201).json({ id: info.lastInsertRowid });
 }));
 
@@ -168,6 +171,8 @@ router.put('/:id', requireRole('admin', 'staff'), transactional(async (req, res)
     ...values,
     req.params.id
   );
+  const linkedHeifer = await db.prepare('SELECT * FROM breeding_animals WHERE farm_id = ? AND ma_so_nai = ? AND status = \'active\'').get(sow.farm_id, sow.ma_so_nai);
+  if (linkedHeifer) await vaccinationRoutes.syncPregnancyFromSow(linkedHeifer);
   await recordAudit(db, req.user, 'sow', sow.id, 'update', sow, await db.prepare('SELECT * FROM sows WHERE id = ?').get(sow.id));
   res.json({ message: 'Cập nhật thành công' });
 }));

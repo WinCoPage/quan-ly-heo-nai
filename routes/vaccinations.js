@@ -25,6 +25,13 @@ const PREGNANT_SCHEDULE = [
   ['Tẩy KST', 105],
 ];
 
+function pregnancyConfirmed(sow) {
+  return ['log_ky1', 'log_ky2', 'log_ky3'].some((field) => {
+    const value = String(sow[field] || '').trim().toLowerCase();
+    return ['x', 'đậu', 'dau', 'đậu thai', 'dau thai', 'có', 'co', 'positive'].includes(value);
+  });
+}
+
 function normalizeDate(value, label) {
   if (typeof value !== 'string') throw Object.assign(new Error(`${label} không hợp lệ`), { status: 400 });
   const parts = value.includes('-') ? value.split('-').map(Number) : value.split(/[\/]/).map(Number).reverse();
@@ -41,6 +48,13 @@ function addDays(dateString, days) {
   const date = new Date(`${dateString}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function sowDateToIso(value) {
+  if (!value) return null;
+  const [day, month, year] = String(value).split(/[/-]/).map(Number);
+  if (!day || !month || !year) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 function scheduleFor(animalId, farmId, phase, baseDate) {
@@ -70,15 +84,37 @@ async function insertSchedule(events) {
   }
 }
 
+async function syncPregnancyFromSow(animal) {
+  const sow = await db.prepare('SELECT * FROM sows WHERE farm_id = ? AND ma_so_nai = ? ORDER BY id DESC LIMIT 1').get(animal.farm_id, animal.ma_so_nai);
+  const confirmed = sow && pregnancyConfirmed(sow) && sow.ngay_phoi;
+  const breedingDate = confirmed ? sowDateToIso(sow.ngay_phoi) : null;
+  if (animal.breeding_date === breedingDate) return;
+  await db.prepare('UPDATE breeding_animals SET breeding_date = ?, updated_at = now_utc_text() WHERE id = ?').run(breedingDate, animal.id);
+  await db.prepare("DELETE FROM vaccination_events WHERE animal_id = ? AND phase = 'pregnant' AND administered_at IS NULL").run(animal.id);
+  if (breedingDate) await insertSchedule(scheduleFor(animal.id, animal.farm_id, 'pregnant', breedingDate));
+}
+
 async function getAnimalsWithEvents(req, requestedFarmId) {
   const farmId = scopeFarm(req, requestedFarmId);
   const params = [];
   let where = "ba.status = 'active'";
   if (farmId) { where += ' AND ba.farm_id = ?'; params.push(farmId); }
   if (req.user.role === 'staff' && !farmId) throw Object.assign(new Error('Tài khoản chưa được gán trại'), { status: 400 });
-  const animals = await db.prepare(
+  let animals = await db.prepare(
     `SELECT ba.*, f.name AS farm_name
      FROM breeding_animals ba JOIN farms f ON f.id = ba.farm_id
+     WHERE ${where} ORDER BY ba.arrival_date DESC, ba.ma_so_nai`
+  ).all(...params);
+  for (const animal of animals) await syncPregnancyFromSow(animal);
+  animals = await db.prepare(
+    `SELECT ba.*, f.name AS farm_name,
+       s.ngay_phoi AS sow_breeding_date,
+       CASE WHEN lower(trim(coalesce(s.log_ky1, ''))) IN ('x', 'đậu', 'dau', 'đậu thai', 'dau thai', 'có', 'co', 'positive')
+              OR lower(trim(coalesce(s.log_ky2, ''))) IN ('x', 'đậu', 'dau', 'đậu thai', 'dau thai', 'có', 'co', 'positive')
+              OR lower(trim(coalesce(s.log_ky3, ''))) IN ('x', 'đậu', 'dau', 'đậu thai', 'dau thai', 'có', 'co', 'positive')
+            THEN 'Đậu thai' ELSE 'Chưa xác nhận' END AS pregnancy_result
+     FROM breeding_animals ba JOIN farms f ON f.id = ba.farm_id
+     LEFT JOIN LATERAL (SELECT ngay_phoi, log_ky1, log_ky2, log_ky3 FROM sows WHERE farm_id = ba.farm_id AND ma_so_nai = ba.ma_so_nai ORDER BY id DESC LIMIT 1) s ON true
      WHERE ${where} ORDER BY ba.arrival_date DESC, ba.ma_so_nai`
   ).all(...params);
   const events = animals.length
@@ -104,6 +140,7 @@ router.get('/export', asyncHandler(async (req, res) => {
     { header: 'Kg', key: 'weight_kg', width: 9 },
     { header: 'Ngày nhập', key: 'arrival_date', width: 14 },
     { header: 'Ngày phối', key: 'breeding_date', width: 14 },
+    { header: 'Kết quả đậu thai', key: 'pregnancy_result', width: 18 },
     ...vaccineColumns.map((name, index) => ({ header: name, key: `v${index}`, width: 24 })),
   ];
   animals.forEach((animal, index) => {
@@ -114,7 +151,8 @@ router.get('/export', asyncHandler(async (req, res) => {
       dong_nai: animal.dong_nai || '',
       weight_kg: Number(animal.weight_kg),
       arrival_date: animal.arrival_date,
-      breeding_date: animal.breeding_date || '',
+      breeding_date: animal.sow_breeding_date || animal.breeding_date || '',
+      pregnancy_result: animal.pregnancy_result || 'Chưa xác nhận',
     };
     vaccineColumns.forEach((column, eventIndex) => {
       const phase = eventIndex < HEIFER_SCHEDULE.length ? 'heifer' : 'pregnant';
@@ -134,7 +172,7 @@ router.get('/export', asyncHandler(async (req, res) => {
 }));
 
 router.post('/animals', requireRole('admin', 'staff'), transactional(async (req, res) => {
-  const { farm_id, ma_so_nai, dong_nai, weight_kg, source, arrival_date, breeding_date } = req.body || {};
+  const { farm_id, ma_so_nai, dong_nai, weight_kg, source, arrival_date } = req.body || {};
   const farmId = req.user.role === 'staff' ? req.user.farm_id : positiveId(farm_id, 'Trại');
   if (!farmId) return res.status(400).json({ error: 'Tài khoản chưa được gán trại' });
   if (typeof ma_so_nai !== 'string' || !/^[A-Za-z0-9._-]{1,40}$/.test(ma_so_nai)) return res.status(400).json({ error: 'Mã số nái không hợp lệ' });
@@ -143,14 +181,11 @@ router.post('/animals', requireRole('admin', 'staff'), transactional(async (req,
   const farm = await db.prepare("SELECT id FROM farms WHERE id = ? AND status = 'active'").get(farmId);
   if (!farm) return res.status(400).json({ error: 'Trại không tồn tại hoặc đã lưu trữ' });
   const arrival = normalizeDate(arrival_date, 'Ngày nhập');
-  const breeding = breeding_date ? normalizeDate(breeding_date, 'Ngày phối') : null;
-  if (breeding && breeding < arrival) return res.status(400).json({ error: 'Ngày phối không thể trước ngày nhập' });
   const info = await db.prepare(
     `INSERT INTO breeding_animals (farm_id, ma_so_nai, dong_nai, weight_kg, source, arrival_date, breeding_date, created_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
-  ).run(farmId, ma_so_nai, optionalText(dong_nai, 80, 'Dòng nái'), optionalText(String(weight), 20, 'Trọng lượng'), optionalText(source, 200, 'Nguồn nhập'), arrival, breeding, req.user.id);
+  ).run(farmId, ma_so_nai, optionalText(dong_nai, 80, 'Dòng nái'), weight, optionalText(source, 200, 'Nguồn nhập'), arrival, null, req.user.id);
   await insertSchedule(scheduleFor(info.lastInsertRowid, farmId, 'heifer', arrival));
-  if (breeding) await insertSchedule(scheduleFor(info.lastInsertRowid, farmId, 'pregnant', breeding));
   const animal = await db.prepare('SELECT * FROM breeding_animals WHERE id = ?').get(info.lastInsertRowid);
   await recordAudit(db, req.user, 'breeding_animal', animal.id, 'create', null, animal);
   res.status(201).json(animal);
@@ -161,16 +196,7 @@ router.patch('/animals/:id', requireRole('admin', 'staff'), transactional(async 
   const animal = await db.prepare('SELECT * FROM breeding_animals WHERE id = ?').get(id);
   if (!animal) return res.status(404).json({ error: 'Không tìm thấy heo hậu bị' });
   if (req.user.role === 'staff' && animal.farm_id !== req.user.farm_id) return res.status(403).json({ error: 'Không có quyền sửa trại khác' });
-  const breeding = req.body.breeding_date ? normalizeDate(req.body.breeding_date, 'Ngày phối') : req.body.breeding_date === null ? null : animal.breeding_date;
-  if (breeding && breeding < animal.arrival_date) return res.status(400).json({ error: 'Ngày phối không thể trước ngày nhập' });
-  await db.prepare('UPDATE breeding_animals SET breeding_date = ?, updated_at = now_utc_text() WHERE id = ?').run(breeding, id);
-  if (breeding !== animal.breeding_date) {
-    await db.prepare("DELETE FROM vaccination_events WHERE animal_id = ? AND phase = 'pregnant' AND administered_at IS NULL").run(id);
-    if (breeding) await insertSchedule(scheduleFor(id, animal.farm_id, 'pregnant', breeding));
-  }
-  const updated = await db.prepare('SELECT * FROM breeding_animals WHERE id = ?').get(id);
-  await recordAudit(db, req.user, 'breeding_animal', id, 'update', animal, updated);
-  res.json(updated);
+  return res.status(400).json({ error: 'Ngày phối được đồng bộ từ Số liệu heo nái và kết quả đậu thai Log kỳ 1, 2 hoặc 3.' });
 }));
 
 router.post('/events/:id/administer', requireRole('admin', 'staff'), transactional(async (req, res) => {
@@ -186,4 +212,5 @@ router.post('/events/:id/administer', requireRole('admin', 'staff'), transaction
   res.json(updated);
 }));
 
+router.syncPregnancyFromSow = syncPregnancyFromSow;
 module.exports = router;
