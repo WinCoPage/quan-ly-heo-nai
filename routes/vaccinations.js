@@ -212,5 +212,20 @@ router.post('/events/:id/administer', requireRole('admin', 'staff'), transaction
   res.json(updated);
 }));
 
+router.post('/events/:id/revert', requireRole('admin', 'staff'), transactional(async (req, res) => {
+  const id = positiveId(req.params.id, 'Mũi tiêm');
+  const event = await db.prepare('SELECT * FROM vaccination_events WHERE id = ?').get(id);
+  if (!event) return res.status(404).json({ error: 'Không tìm thấy lịch tiêm' });
+  if (req.user.role === 'staff' && event.farm_id !== req.user.farm_id) {
+    return res.status(403).json({ error: 'Không có quyền sửa trại khác' });
+  }
+  if (!event.administered_at) return res.status(400).json({ error: 'Mũi tiêm chưa được ghi nhận' });
+  const updated = await db.prepare(
+    'UPDATE vaccination_events SET administered_at = NULL, administered_by = NULL, note = ? WHERE id = ? RETURNING *'
+  ).run(`Hoàn tác lúc ${new Date().toISOString()}: ${optionalText(req.body?.note, 500, 'Ghi chú') || 'Bấm nhầm'}`, id);
+  await recordAudit(db, req.user, 'vaccination_event', id, 'revert', event, updated.rows[0]);
+  res.json(updated.rows[0]);
+}));
+
 router.syncPregnancyFromSow = syncPregnancyFromSow;
 module.exports = router;

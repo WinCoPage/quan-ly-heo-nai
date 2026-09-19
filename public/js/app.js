@@ -865,8 +865,10 @@ function renderStaffDashboard() {
 
 function vaccinationDateLabel(value) {
   if (!value) return '';
-  const [year, month, day] = String(value).slice(0, 10).split('-');
-  return `${day}/${month}/${year}`;
+  const text = String(value).slice(0, 10);
+  if (/^\d{2}[/-]\d{2}[/-]\d{4}$/.test(text)) return text.replace(/-/g, '/');
+  const [year, month, day] = text.split('-');
+  return year && month && day ? `${day}/${month}/${year}` : text;
 }
 
 function vaccinationStatus(event) {
@@ -940,20 +942,29 @@ async function renderVaccinationDashboard(container) {
         if (!event) return '<td class="vacc-empty">-</td>';
         const status = vaccinationStatus(event);
         return `<td class="vacc-cell ${status.className}" title="${safeText(`${item.name} - dự kiến ${vaccinationDateLabel(event.scheduled_date)}`)}">
-          <label class="vacc-check"><input type="checkbox" data-administer-vacc="${event.id}" ${event.administered_at ? 'checked disabled' : ''}><span>${event.administered_at ? 'Đã tiêm' : status.label}</span></label>
+          <label class="vacc-check"><input type="checkbox" data-vaccination-toggle="${event.id}" ${event.administered_at ? 'checked' : ''}><span>${event.administered_at ? 'Đã tiêm · bấm để sửa' : status.label}</span></label>
           <small>${safeText(vaccinationDateLabel(event.scheduled_date))}</small>
         </td>`;
       }).join('');
       return `<tr><td>${safeText(animal.ma_so_nai)}</td><td>${safeText(animal.dong_nai)}</td><td>${safeText(animal.weight_kg)}</td><td>${safeText(vaccinationDateLabel(animal.arrival_date))}</td><td>${safeText(vaccinationDateLabel(animal.sow_breeding_date || animal.breeding_date))}</td><td><span class="badge ${animal.pregnancy_result === 'Đậu thai' ? 'approved' : 'pending'}">${safeText(animal.pregnancy_result || 'Chưa xác nhận')}</span></td>${cells}</tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-administer-vacc]').forEach((button) => button.addEventListener('click', async () => {
-      if (!button.checked) return;
-      const note = prompt('Ghi chú mũi tiêm (có thể để trống):') || '';
+    tbody.querySelectorAll('[data-vaccination-toggle]').forEach((button) => button.addEventListener('change', async () => {
+      const eventId = button.dataset.vaccinationToggle;
       try {
-        await api(`/vaccinations/events/${button.dataset.administerVacc}/administer`, { method: 'POST', body: JSON.stringify({ note }) });
+        if (button.checked) {
+          const note = prompt('Ghi chú mũi tiêm (có thể để trống):') || '';
+          await api(`/vaccinations/events/${eventId}/administer`, { method: 'POST', body: JSON.stringify({ note }) });
+        } else {
+          if (!confirm('Xác nhận sửa lại mũi tiêm này? Hệ thống sẽ ghi thời gian hoàn tác thực tế.')) {
+            button.checked = true;
+            return;
+          }
+          const note = prompt('Lý do sửa (có thể để trống):') || 'Bấm nhầm';
+          await api(`/vaccinations/events/${eventId}/revert`, { method: 'POST', body: JSON.stringify({ note }) });
+        }
         await loadVaccinations();
       } catch (error) {
-        button.checked = false;
+        button.checked = !button.checked;
         alert(error.message);
       }
     }));
