@@ -1,0 +1,29 @@
+name: PostgreSQL backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/backup-postgres.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_DIR: ./backup-output
+          BACKUP_RETENTION: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: winco-postgres-backup-${{ github.run_id }}
+          path: backup-output/*
+          retention-days: 30

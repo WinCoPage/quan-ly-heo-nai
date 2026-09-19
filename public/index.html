@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quản Lý Trại Nái WINCO</title>
+<link rel="icon" href="/img/logo.png" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="/img/logo.png" alt="Winco" class="brand-logo" /> Quản Lý Trại Nái WINCO</div>
+    <div id="userBox" class="user-box hidden">
+      <span id="userInfo"></span>
+      <button id="btnChangePw" class="btn-link">Đổi mật khẩu</button>
+      <button id="btnLogout" class="btn-link">Đăng xuất</button>
+    </div>
+  </header>
+
+  <main id="app" class="container"></main>
+
+  <template id="tpl-auth">
+    <div class="auth-wrap">
+      <div class="auth-shell">
+        <section class="auth-brand-panel">
+          <img src="/img/logo.png" alt="Winco" class="auth-logo" />
+          <h1>Quản Lý Trại Nái WINCO</h1>
+          <p class="auth-subtitle">Công Ty TNHH Công Nghệ Dinh Dưỡng Winco</p>
+        </section>
+
+        <section class="auth-form-panel">
+          <div class="tabs">
+            <button class="tab-btn active" data-tab="login">Đăng nhập</button>
+            <button class="tab-btn" data-tab="register">Đăng ký tài khoản</button>
+          </div>
+
+          <form id="loginForm" class="tab-panel">
+            <h3>Đăng nhập hệ thống</h3>
+            <label>Tên đăng nhập</label>
+            <input type="text" name="username" required autocomplete="username" />
+            <label>Mật khẩu</label>
+            <input type="password" name="password" required autocomplete="current-password" />
+            <button type="submit" class="btn-primary">Đăng nhập</button>
+            <p class="msg" id="loginMsg"></p>
+          </form>
+
+          <form id="registerForm" class="tab-panel hidden">
+            <h3>Đăng ký tài khoản xem số liệu</h3>
+            <p class="hint">Tài khoản cần được quản trị viên duyệt trước khi xem số liệu các trại.</p>
+            <label>Họ và tên</label>
+            <input type="text" name="full_name" required />
+            <label>Địa chỉ</label>
+            <input type="text" name="address" />
+            <label>Số điện thoại</label>
+            <input type="tel" name="phone" />
+            <label>Tên đăng nhập</label>
+            <input type="text" name="username" required />
+            <label>Mật khẩu</label>
+            <input type="password" name="password" required minlength="8" />
+            <button type="submit" class="btn-primary">Đăng ký</button>
+            <p class="msg" id="registerMsg"></p>
+          </form>
+        </section>
+      </div>
+    </div>
+  </template>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
