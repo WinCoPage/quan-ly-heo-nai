@@ -10,7 +10,7 @@ function formatTimestamp(value) {
 }
 function todayVN() {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).formatToParts(new Date());
-  const get = type => parts.find(p => p.type === type).value;
+  const get = type => parts.find(p => p.type === type)?.value || '';
   return parseVNDate(get('day') + '/' + get('month') + '/' + get('year'));
 }
 function stopCareTimer() {
@@ -863,7 +863,7 @@ function vaccinationDateLabel(value) {
 
 function vaccinationStatus(event) {
   if (event.administered_at) return { label: 'Đã tiêm', className: 'approved' };
-  const today = todayVN();
+  const today = todayVN() || new Date();
   const scheduled = new Date(`${event.scheduled_date}T00:00:00Z`);
   const current = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   if (scheduled < current) return { label: 'Quá hạn', className: 'rejected' };
@@ -910,6 +910,7 @@ async function renderVaccinationDashboard(container) {
 
   async function loadVaccinations() {
     const animals = await api(`/vaccinations/animals?farm_id=${farmId}`);
+    if (!Array.isArray(animals)) throw new Error('Dữ liệu lịch tiêm không hợp lệ');
     const events = animals.flatMap((animal) => animal.vaccination_events.map((event) => ({ ...event, animal })));
     const overdue = events.filter((event) => vaccinationStatus(event).label === 'Quá hạn').length;
     const todayCount = events.filter((event) => vaccinationStatus(event).label === 'Đến lịch hôm nay').length;
@@ -950,23 +951,37 @@ async function renderVaccinationDashboard(container) {
     }));
   }
 
-  container.querySelector('#vaccAnimalForm').addEventListener('submit', async (event) => {
+  const vaccinationForm = container.querySelector('#vaccAnimalForm');
+  if (!vaccinationForm) throw new Error('Không tìm thấy biểu mẫu nhập heo hậu bị');
+  vaccinationForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const form = new FormData(event.target);
+    const form = new FormData(vaccinationForm);
     const message = container.querySelector('#vaccFormMsg');
     try {
       await api('/vaccinations/animals', { method: 'POST', body: JSON.stringify(Object.fromEntries(form.entries())) });
-      event.target.reset();
-      message.textContent = 'Đã tạo hồ sơ và lịch vaccine heo hậu bị.';
-      message.classList.add('success');
+      vaccinationForm.reset();
+      if (message) {
+        message.textContent = 'Đã tạo hồ sơ và lịch vaccine heo hậu bị.';
+        message.classList.add('success');
+      }
       await loadVaccinations();
     } catch (error) {
-      message.textContent = error.message;
-      message.classList.remove('success');
+      if (message) {
+        message.textContent = error.message;
+        message.classList.remove('success');
+      } else alert(error.message);
     }
   });
-  container._vaccinationTimer = setInterval(loadVaccinations, 15000);
-  loadVaccinations();
+  container._vaccinationTimer = setInterval(() => {
+    loadVaccinations().catch((error) => {
+      const message = container.querySelector('#vaccFormMsg');
+      if (message) message.textContent = error.message;
+    });
+  }, 15000);
+  loadVaccinations().catch((error) => {
+    const message = container.querySelector('#vaccFormMsg');
+    if (message) message.textContent = error.message;
+  });
 }
 
 // ---------- VIEWER DASHBOARD (chỉ xem trại & đàn heo) ----------
