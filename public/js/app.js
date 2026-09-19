@@ -14,8 +14,9 @@ function todayVN() {
   return parseVNDate(get('day') + '/' + get('month') + '/' + get('year'));
 }
 function stopCareTimer() {
-  const container = document.getElementById('tabContent');
-  if (container?._careTimer) { clearInterval(container._careTimer); container._careTimer = null; }
+  document.querySelectorAll('#tabContent, #staffTabContent').forEach((container) => {
+    if (container?._careTimer) { clearInterval(container._careTimer); container._careTimer = null; }
+  });
 }
 function stopVaccinationTimer() {
   const container = document.getElementById('staffTabContent');
@@ -447,6 +448,7 @@ async function renderSowSection(container, { canEdit }) {
     const total = sows.length || 1;
     const pctOverdue = Math.round((overdue.length / total) * 100);
     const card = container.querySelector('#overdueAlertCard');
+    if (!card) return;
     card.innerHTML = `
       <h3>Cảnh báo quá ngày dự kiến đẻ</h3>
       <div class="overdue-bar-wrap">
@@ -463,8 +465,10 @@ async function renderSowSection(container, { canEdit }) {
   }
 
   async function loadSows() {
+    if (!container.isConnected) return;
     const farmId = await currentFarmId();
     const tbody = container.querySelector('#sowTbody');
+    if (!tbody) return;
     if (!farmId) {
       tbody.innerHTML = `<tr><td colspan="20">Chưa có trại nào để hiển thị.</td></tr>`;
       container.querySelector('#overdueAlertCard').innerHTML = '';
@@ -523,11 +527,15 @@ async function renderSowSection(container, { canEdit }) {
   }
 
   async function refreshCareHistory() {
-    const sowId = container.querySelector('#careSowSelect').value;
+    if (!container.isConnected) return;
+    const careSelect = container.querySelector('#careSowSelect');
     const history = container.querySelector('#careHistory');
+    const lastUpdate = container.querySelector('#careLastUpdate');
+    if (!careSelect || !history || !lastUpdate) return;
+    const sowId = careSelect.value;
     if (!sowId) {
       history.innerHTML = '<li>Chọn một heo nái để xem lịch sử chăm sóc.</li>';
-      container.querySelector('#careLastUpdate').textContent = 'Chưa chọn heo nái';
+      lastUpdate.textContent = 'Chưa chọn heo nái';
       return;
     }
     const logs = await api(`/sows/${sowId}/logs`);
@@ -535,7 +543,7 @@ async function renderSowSection(container, { canEdit }) {
     history.innerHTML = logs.length
       ? logs.map((l) => `<li><strong>${safeText(l.status)}</strong> - ${safeText(l.note)}<br><small>${safeText(formatTimestamp(l.created_at))} · ${safeText(l.created_by_name || 'N/A')}</small></li>`).join('')
       : '<li>Chưa có ghi nhận nào.</li>';
-    container.querySelector('#careLastUpdate').textContent = `Cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
+    if (lastUpdate.isConnected) lastUpdate.textContent = `Cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
   }
 
   container.querySelector('#careSowSelect').addEventListener('change', refreshCareHistory);

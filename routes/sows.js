@@ -136,6 +136,12 @@ router.post('/', requireRole('admin', 'staff'), transactional(async (req, res) =
   const farm = await db.prepare('SELECT status FROM farms WHERE id = ?').get(positiveId(farmId, 'Trại'));
   if (!farm) return res.status(400).json({ error: 'Trại không tồn tại' });
   if (farm.status !== 'active') return res.status(403).json({ error: 'Trại đã ngừng sử dụng' });
+  const heifer = await db.prepare(
+    "SELECT id, ma_so_nai FROM breeding_animals WHERE farm_id = ? AND ma_so_nai = ? AND status = 'active'"
+  ).get(farmId, req.body.ma_so_nai);
+  if (!heifer) {
+    return res.status(400).json({ error: 'Phải tạo mã số heo hậu bị tại đúng trại trước khi tạo heo nái. Mã số hậu bị và mã số nái phải giống nhau.' });
+  }
   const payload = validateSow(req.body, EDITABLE_FIELDS);
   const cols = ['farm_id', 'created_by', ...EDITABLE_FIELDS];
   const values = [farmId, req.user.id, ...EDITABLE_FIELDS.map((f) => payload[f] ?? null)];
